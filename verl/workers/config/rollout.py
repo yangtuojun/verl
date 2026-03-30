@@ -229,8 +229,11 @@ class RolloutConfig(BaseConfig):
     skip_tokenizer_init: bool = False
 
     quantization: Optional[str] = None
-
     quantization_config_file: Optional[str] = None
+
+    # Online 4bit quantization for inference
+    int4_enabled: bool = False
+    int4_group_size: int = 128
 
     enable_rollout_routing_replay: bool = False
 

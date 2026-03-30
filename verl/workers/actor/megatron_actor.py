@@ -52,6 +52,7 @@ from verl.utils.megatron.tensor_parallel import vocab_parallel_entropy, vocab_pa
 from verl.utils.megatron_utils import get_megatron_mtp_loss, get_model_config, unwrap_model
 from verl.utils.profiler import GPUMemoryLogger
 from verl.utils.py_functional import append_to_dict
+from verl.utils.quantization import register_pseudo_quant_hooks
 from verl.utils.seqlen_balancing import get_reverse_idx, rearrange_micro_batches
 from verl.utils.torch_functional import broadcast_dict_tensor
 from verl.workers.actor import BasePPOActor
@@ -182,6 +183,12 @@ class MegatronPPOActor(BasePPOActor):
         config = get_model_config(self.actor_module[0])
         print(config)
         config.finalize_model_grads_func = finalize_model_grads
+
+        # Register pseudo quantization hooks if enabled
+        if hasattr(self.config, 'pseudo_quant') and self.config.pseudo_quant.enable:
+            for model in self.actor_module:
+                unwrapped_model = unwrap_model(model)
+                register_pseudo_quant_hooks(unwrapped_model, self.config.pseudo_quant)
 
     def _validate_config(self, config) -> None:
         """Validate config options not implemented for Megatron backend"""

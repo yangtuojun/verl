@@ -73,6 +73,8 @@ from verl.utils.profiler import (
     simple_timer,
 )
 from verl.utils.profiler.performance import reduce_timing, topk_reduce_ratio_min_max
+from verl.utils.quantization import apply_online_int4_quantization
+from verl.utils.quantization import register_pseudo_quant_hooks, is_pseudo_quant_enabled_from_env, get_pseudo_quant_group_size
 from verl.utils.ray_utils import get_event_loop
 from verl.utils.torch_functional import use_original_torch_compile
 from verl.workers.actor.megatron_actor import MegatronPPOActor
@@ -613,6 +615,17 @@ class ActorRolloutRefWorker(MegatronWorker, DistProfilerExtension):
             print(f"routing replay layers: {len(RouterReplay.router_instances)}")
             log_gpu_memory_usage("After MegatronPPOActor init", logger=logger)
 
+            # Register pseudo quantization hooks for MLP weights if enabled via environment variable
+            if is_pseudo_quant_enabled_from_env():
+                from verl.utils.megatron_utils import unwrap_model
+                group_size = get_pseudo_quant_group_size()
+                for model in self.actor.actor_module:
+                    unwrapped_model = unwrap_model(model)
+                    register_pseudo_quant_hooks(unwrapped_model, type('obj', (object,), {
+                        'enable': True,
+                        'group_size': group_size
+                    })())
+
         if self._is_rollout:
             with use_original_torch_compile():
                 self._build_rollout(trust_remote_code=self.config.model.get("trust_remote_code", False))
@@ -712,6 +725,14 @@ class ActorRolloutRefWorker(MegatronWorker, DistProfilerExtension):
                 self.tf_config,
                 self.layer_name_mapping,
             )
+
+        # Apply online int4 quantization for vLLM inference if pseudo quantization is enabled
+        if is_pseudo_quant_enabled_from_env():
+            group_size = get_pseudo_quant_group_size()
+            per_tensor_param = dict(apply_online_int4_quantization(
+                per_tensor_param,
+                group_size=group_size
+            ))
 
         if self.config.rollout.free_cache_engine:
             await self.rollout.resume(tags=["weights"])
